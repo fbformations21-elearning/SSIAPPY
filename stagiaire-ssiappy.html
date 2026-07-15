@@ -29,7 +29,7 @@
   .banner{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13.5px}
   .banner .d{width:16px;height:16px;border-radius:50%;border:2px solid #0c0f14}
   .qtheme{display:inline-block;font-weight:800;font-size:14px;padding:7px 14px;border-radius:999px;border:1px solid rgba(0,0,0,.3);margin-bottom:14px}
-  .qtext{font-size:27px;line-height:1.3;font-weight:700;margin-bottom:10px}
+  .qtext{font-size:31px;line-height:1.3;font-weight:700;margin-bottom:10px}
   .qhint{color:var(--dim);font-size:14.5px;margin-bottom:18px}
   .opt{display:flex;align-items:flex-start;gap:13px;padding:18px;border:1px solid var(--line);border-radius:14px;margin-bottom:11px;cursor:pointer;font-size:19px;line-height:1.35}
   .opt .box{width:28px;height:28px;border-radius:8px;border:2px solid var(--dim);flex:0 0 auto;margin-top:2px}
@@ -96,7 +96,7 @@ const q=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
 const CODE=(params.get('session')||'').trim();
 const sid='s'+Math.random().toString(36).slice(2,9);
-let sb=null,chan=null,myColor=null,taken={},startedGame=false;
+let sb=null,chan=null,myColor=null,taken={},startedGame=false,joined=false;
 let curQid=null,curCorrect=null,qAppearedAt=0,sel=new Set(),answered=false;
 
 q('codePill').textContent = CODE ? ('Session '+CODE) : 'Aucune session';
@@ -133,6 +133,7 @@ function bcast(event,payload){if(chan)chan.send({type:'broadcast',event,payload}
 
 /* ---- rejoindre ---- */
 q('joinBtn').onclick=()=>{const name=(q('nameInput').value||'').trim()||CNAME[myColor];
+  joined=true;
   bcast('claim',{sid,color:myColor,name});
   q('turnText').textContent='Bienvenue '+name+' !';
   show('scrWait');q('waitStatus').textContent='En attente du démarrage de la partie…';
@@ -142,6 +143,7 @@ q('joinBtn').onclick=()=>{const name=(q('nameInput').value||'').trim()||CNAME[my
 function setBanner(color,txt){const dots=[q('turnDot'),q('turnDot2')],txts=[q('turnText'),q('turnText2')];
   dots.forEach(d=>d.style.background=color?COL[color]:'#555');txts.forEach(t=>t.textContent=txt);}
 function onState(p){startedGame=!!p.started;
+  if(!joined)return;
   if(p.ended){setBanner(p.winnerColor,'🏆 '+(p.winnerName||'')+' a gagné !');show('scrWait');q('waitStatus').textContent='Partie terminée.';return;}
   const who=p.activeName||CNAME[p.activeColor]||'';
   const mine=p.activeColor===myColor;
@@ -151,7 +153,7 @@ function onState(p){startedGame=!!p.started;
 }
 
 /* ---- question ---- */
-function onQuestion(p){curQid=p.qid;curCorrect=null;sel=new Set();answered=false;qAppearedAt=performance.now();
+function onQuestion(p){if(!joined)return;curQid=p.qid;curCorrect=null;sel=new Set();answered=false;qAppearedAt=performance.now();
   const badge=q('qTheme');badge.textContent=p.themeName||('Thème '+p.theme);
   badge.style.background=COL[p.color]||'#888';badge.style.color=light(p.color)?'#111':'#fff';
   q('qText').textContent=p.question;
@@ -172,7 +174,7 @@ q('sendBtn').onclick=()=>{if(answered||!curQid)return;answered=true;
 };
 
 /* ---- révélation ---- */
-function onReveal(p){if(p.qid!==curQid)return;const correct=new Set(p.correctSet||[]);
+function onReveal(p){if(!joined||p.qid!==curQid)return;const correct=new Set(p.correctSet||[]);
   [...q('qOpts').children].forEach(d=>{const i=+d.dataset.i;
     if(correct.has(i))d.classList.add('ok');else if(sel.has(i))d.classList.add('ko');});
   const mine=(p.results||[]).find(r=>r.color===myColor);
