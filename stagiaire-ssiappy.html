@@ -25,6 +25,8 @@
   button.go{width:100%;border:none;border-radius:14px;padding:18px;font:inherit;font-weight:800;font-size:19px;color:#fff;
     background:linear-gradient(180deg,#ff2846,var(--red));cursor:pointer;margin-top:12px}
   button.go:disabled{opacity:.4}
+  .brBtn{display:block;width:100%;border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:14px;padding:17px;font:inherit;font-weight:800;font-size:19px;cursor:pointer;margin-bottom:11px}
+  .brBtn:hover{border-color:var(--amber);background:rgba(245,166,35,.12)}
   .status{text-align:center;color:var(--dim);font-size:14px;margin:20px 0}
   .banner{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13.5px}
   .banner .d{width:16px;height:16px;border-radius:50%;border:2px solid #0c0f14}
@@ -67,6 +69,8 @@
     <div class="banner" id="turnBanner"><span class="d" id="turnDot"></span><span id="turnText">En attente…</span></div>
     <div class="big">⏳</div>
     <div class="status" id="waitStatus">En attente de la prochaine question…</div>
+    <button class="go hide" id="rollBtn" style="margin-top:22px">🎲 Lancer le dé</button>
+    <div id="stuBranch" class="hide" style="margin-top:20px;width:100%"></div>
   </div>
 
   <!-- écran : question -->
@@ -127,11 +131,14 @@ function connect(){
   chan.on('broadcast',{event:'state'},({payload})=>{onState(payload);});
   chan.on('broadcast',{event:'question'},({payload})=>{onQuestion(payload);});
   chan.on('broadcast',{event:'reveal'},({payload})=>{onReveal(payload);});
+  chan.on('broadcast',{event:'branch'},({payload})=>{onBranch(payload);});
+  chan.on('broadcast',{event:'branchclear'},()=>{hideBranch();});
   chan.subscribe(st=>{if(st==='SUBSCRIBED'){bcast('hello',{sid});}});
 }
 function bcast(event,payload){if(chan)chan.send({type:'broadcast',event,payload});}
 
 /* ---- rejoindre ---- */
+q('rollBtn').onclick=()=>{bcast('roll',{sid,color:myColor});q('rollBtn').disabled=true;q('rollBtn').textContent='Lancé…';q('waitStatus').textContent='En attente de la question…';};
 q('joinBtn').onclick=()=>{const name=(q('nameInput').value||'').trim()||CNAME[myColor];
   joined=true;
   bcast('claim',{sid,color:myColor,name});
@@ -144,16 +151,17 @@ function setBanner(color,txt){const dots=[q('turnDot'),q('turnDot2')],txts=[q('t
   dots.forEach(d=>d.style.background=color?COL[color]:'#555');txts.forEach(t=>t.textContent=txt);}
 function onState(p){startedGame=!!p.started;
   if(!joined)return;
-  if(p.ended){setBanner(p.winnerColor,'🏆 '+(p.winnerName||'')+' a gagné !');show('scrWait');q('waitStatus').textContent='Partie terminée.';return;}
-  const who=p.activeName||CNAME[p.activeColor]||'';
+  if(p.ended){setBanner(p.winnerColor,'🏆 '+(p.winnerName||'')+' a gagné !');q('rollBtn').classList.add('hide');show('scrWait');q('waitStatus').textContent='Partie terminée.';return;}
   const mine=p.activeColor===myColor;
-  setBanner(p.activeColor,(mine?'À toi de jouer, ':'Au tour de ')+who);
+  setBanner(p.activeColor,(mine?'À toi de jouer !':'Au tour de '+(p.activeName||CNAME[p.activeColor]||'')));
   if(q('scrQ').classList.contains('hide')){show('scrWait');
-    q('waitStatus').textContent=startedGame?'En attente de la question…':'En attente du démarrage…';}
+    const canRoll=mine&&startedGame;
+    q('rollBtn').classList.toggle('hide',!canRoll);q('rollBtn').disabled=false;q('rollBtn').textContent='🎲 Lancer le dé';
+    q('waitStatus').textContent=!startedGame?'En attente du démarrage…':(mine?'À toi de lancer le dé !':'En attente de la question…');}
 }
 
 /* ---- question ---- */
-function onQuestion(p){if(!joined)return;curQid=p.qid;curCorrect=null;sel=new Set();answered=false;qAppearedAt=performance.now();
+function onQuestion(p){if(!joined)return;hideBranch();curQid=p.qid;curCorrect=null;sel=new Set();answered=false;qAppearedAt=performance.now();
   const badge=q('qTheme');badge.textContent=p.themeName||('Thème '+p.theme);
   badge.style.background=COL[p.color]||'#888';badge.style.color=light(p.color)?'#111':'#fff';
   q('qText').textContent=p.question;
@@ -185,10 +193,17 @@ function onReveal(p){if(!joined||p.qid!==curQid)return;const correct=new Set(p.c
   setTimeout(()=>{q('sendBtn').classList.remove('hide');show('scrWait');
     const nextMine=p.activeColor===myColor;
     setBanner(p.activeColor,(nextMine?'À toi de jouer !':'Au tour de '+(p.activeName||CNAME[p.activeColor]||'')));
-    q('waitStatus').textContent=nextMine?'Lance le dé sur le plateau, puis réponds ici.':'En attente de la prochaine question…';
+    q('rollBtn').classList.toggle('hide',!(nextMine&&startedGame));q('rollBtn').disabled=false;q('rollBtn').textContent='🎲 Lancer le dé';
+    q('waitStatus').textContent=nextMine?'À toi de lancer le dé !':'En attente de la prochaine question…';
   },2600);
 }
 
+function onBranch(p){if(!joined||!p||p.activeColor!==myColor)return;
+  const box=q('stuBranch');box.innerHTML='';
+  (p.items||[]).forEach(it=>{const b=document.createElement('button');b.className='brBtn';b.textContent=it.label;
+    b.onclick=()=>{bcast('choice',{sid,color:myColor,cell:it.cell});hideBranch();q('waitStatus').textContent='Direction envoyée…';};box.appendChild(b);});
+  q('rollBtn').classList.add('hide');box.classList.remove('hide');q('waitStatus').textContent='Choisis ta direction :';show('scrWait');}
+function hideBranch(){const box=q('stuBranch');if(box){box.classList.add('hide');box.innerHTML='';}}
 buildColors();connect();
 </script>
 </body>
