@@ -40,6 +40,12 @@
   .opt.ok{border-color:#2f9e52;background:rgba(47,158,82,.16)}
   .opt.ok .box{background:#2f9e52;border-color:#2f9e52}
   .opt.ko{border-color:#e4556a;background:rgba(228,85,106,.14)}
+  #qOpts{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+  .abtn{display:flex;align-items:center;justify-content:center;height:76px;border-radius:16px;font-size:34px;font-weight:800;color:#fff;cursor:pointer;border:3px solid rgba(255,255,255,.14);box-shadow:0 5px 0 rgba(0,0,0,.28);user-select:none;transition:transform .05s}
+  .abtn:active{transform:translateY(3px);box-shadow:0 2px 0 rgba(0,0,0,.28)}
+  .abtn.sel{border-color:#fff;box-shadow:0 0 0 4px rgba(255,255,255,.4),0 5px 0 rgba(0,0,0,.28)}
+  .abtn.ok{outline:4px solid #d6ffe6;outline-offset:2px}
+  .abtn.ko{opacity:.32}
   .big{font-size:44px;text-align:center;margin:14px 0}
   .center{flex:1;display:flex;flex-direction:column;justify-content:center;text-align:center}
   .hide{display:none!important}
@@ -101,6 +107,7 @@ const params=new URLSearchParams(location.search);
 const CODE=(params.get('session')||'').trim();
 const sid='s'+Math.random().toString(36).slice(2,9);
 let sb=null,chan=null,myColor=null,taken={},startedGame=false,joined=false;
+const ABT=['#e0322f','#2b7fd4','#e8912f','#3ca15a','#8a54c6','#d64a9e','#00a6a6'];
 let curQid=null,curCorrect=null,qAppearedAt=0,sel=new Set(),answered=false;
 
 q('codePill').textContent = CODE ? ('Session '+CODE) : 'Aucune session';
@@ -164,11 +171,11 @@ function onState(p){startedGame=!!p.started;
 function onQuestion(p){if(!joined)return;hideBranch();curQid=p.qid;curCorrect=null;sel=new Set();answered=false;qAppearedAt=performance.now();
   const badge=q('qTheme');badge.textContent=p.themeName||('Thème '+p.theme);
   badge.style.background=COL[p.color]||'#888';badge.style.color=light(p.color)?'#111':'#fff';
-  q('qText').textContent=p.question;
-  q('qHint').textContent=p.multi?'Plusieurs bonnes réponses possibles — coche tout ce qui est juste':'Une seule bonne réponse';
+  q('qText').textContent='\uD83D\uDC40 Question sur l\u2019\u00E9cran';
+  q('qHint').textContent=p.multi?'Touche toutes les bonnes lettres, puis Valide':'Touche la bonne lettre, puis Valide';
   const wrap=q('qOpts');wrap.innerHTML='';
-  (p.options||[]).forEach((op,i)=>{const d=document.createElement('div');d.className='opt';d.dataset.i=i;
-    d.innerHTML='<span class="box"></span><span>'+op+'</span>';
+  (p.options||[]).forEach((op,i)=>{const d=document.createElement('div');d.className='abtn';d.dataset.i=i;
+    d.style.background=ABT[i%ABT.length];d.textContent=String.fromCharCode(65+i);
     d.onclick=()=>{if(answered)return;if(sel.has(i)){sel.delete(i);d.classList.remove('sel');}else{sel.add(i);d.classList.add('sel');}};
     wrap.appendChild(d);});
   q('sendBtn').disabled=false;q('sendBtn').textContent='Valider ma réponse';q('qStatus').textContent='';
