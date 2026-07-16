@@ -75,6 +75,7 @@
     <div class="banner" id="turnBanner"><span class="d" id="turnDot"></span><span id="turnText">En attente…</span></div>
     <div class="big">⏳</div>
     <div class="status" id="waitStatus">En attente de la prochaine question…</div>
+    <button class="go hide" id="turnBtn" style="margin-top:22px">👉 À mon tour</button>
     <button class="go hide" id="rollBtn" style="margin-top:22px">🎲 Lancer le dé</button>
     <div id="stuBranch" class="hide" style="margin-top:20px;width:100%"></div>
   </div>
@@ -141,10 +142,13 @@ function connect(){
   chan.on('broadcast',{event:'branch'},({payload})=>{onBranch(payload);});
   chan.on('broadcast',{event:'branchclear'},()=>{hideBranch();});
   chan.subscribe(st=>{if(st==='SUBSCRIBED'){bcast('hello',{sid});}});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&joined&&chan){try{bcast('hello',{sid});}catch(e){}}});
+  window.addEventListener('online',()=>{if(joined&&chan){try{bcast('hello',{sid});}catch(e){}}});
 }
 function bcast(event,payload){if(chan)chan.send({type:'broadcast',event,payload});}
 
 /* ---- rejoindre ---- */
+q('turnBtn').onclick=()=>{bcast('continue',{sid,color:myColor});q('turnBtn').classList.add('hide');q('rollBtn').classList.remove('hide');q('rollBtn').disabled=false;q('rollBtn').textContent='\uD83C\uDFB2 Lancer le dé';q('waitStatus').textContent='\u00C0 toi de lancer le dé !';};
 q('rollBtn').onclick=()=>{bcast('roll',{sid,color:myColor});q('rollBtn').disabled=true;q('rollBtn').textContent='Lancé…';q('waitStatus').textContent='En attente de la question…';};
 q('joinBtn').onclick=()=>{const name=(q('nameInput').value||'').trim()||CNAME[myColor];
   joined=true;
@@ -163,12 +167,12 @@ function onState(p){startedGame=!!p.started;
   setBanner(p.activeColor,(mine?'À toi de jouer !':'Au tour de '+(p.activeName||CNAME[p.activeColor]||'')));
   if(q('scrQ').classList.contains('hide')){show('scrWait');
     const canRoll=mine&&startedGame;
-    q('rollBtn').classList.toggle('hide',!canRoll);q('rollBtn').disabled=false;q('rollBtn').textContent='🎲 Lancer le dé';
+    q('turnBtn').classList.add('hide');q('rollBtn').classList.toggle('hide',!canRoll);q('rollBtn').disabled=false;q('rollBtn').textContent='🎲 Lancer le dé';
     q('waitStatus').textContent=!startedGame?'En attente du démarrage…':(mine?'À toi de lancer le dé !':'En attente de la question…');}
 }
 
 /* ---- question ---- */
-function onQuestion(p){if(!joined)return;hideBranch();curQid=p.qid;curCorrect=null;sel=new Set();answered=false;qAppearedAt=performance.now();
+function onQuestion(p){if(!joined||!p||p.qid===curQid)return;hideBranch();q('turnBtn').classList.add('hide');curQid=p.qid;curCorrect=null;sel=new Set();answered=false;qAppearedAt=performance.now();
   const badge=q('qTheme');badge.textContent=p.themeName||('Thème '+p.theme);
   badge.style.background=COL[p.color]||'#888';badge.style.color=light(p.color)?'#111':'#fff';
   q('qText').textContent='\uD83D\uDC40 Question sur l\u2019\u00E9cran';
@@ -200,8 +204,9 @@ function onReveal(p){if(!joined||p.qid!==curQid)return;const correct=new Set(p.c
   setTimeout(()=>{q('sendBtn').classList.remove('hide');show('scrWait');
     const nextMine=p.activeColor===myColor;
     setBanner(p.activeColor,(nextMine?'À toi de jouer !':'Au tour de '+(p.activeName||CNAME[p.activeColor]||'')));
-    q('rollBtn').classList.toggle('hide',!(nextMine&&startedGame));q('rollBtn').disabled=false;q('rollBtn').textContent='🎲 Lancer le dé';
-    q('waitStatus').textContent=nextMine?'À toi de lancer le dé !':'En attente de la prochaine question…';
+    q('rollBtn').classList.add('hide');
+    q('turnBtn').classList.toggle('hide',!(nextMine&&startedGame));q('turnBtn').disabled=false;
+    q('waitStatus').textContent=nextMine?'À toi ! Appuie sur « À mon tour »':'En attente de la prochaine question…';
   },2600);
 }
 
