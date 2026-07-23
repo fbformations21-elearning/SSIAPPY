@@ -21,10 +21,14 @@
   .cbtn .d{width:22px;height:22px;border-radius:50%;border:2px solid #0c0f14;flex:0 0 auto}
   .cbtn:disabled{opacity:.4}
   .cbtn.sel{border-color:var(--amber);background:rgba(245,166,35,.12)}
+  .cbtn.back{border-color:#2f9e52;background:rgba(47,158,82,.10)}
   input.name{width:100%;background:var(--ink);border:1px solid var(--line);color:var(--text);border-radius:12px;padding:13px 14px;font:inherit;font-size:16px;margin-top:12px}
   button.go{width:100%;border:none;border-radius:14px;padding:18px;font:inherit;font-weight:800;font-size:19px;color:#fff;
     background:linear-gradient(180deg,#ff2846,var(--red));cursor:pointer;margin-top:12px}
   button.go:disabled{opacity:.4}
+  .rejoin{display:none;background:rgba(47,158,82,.12);border:1px solid #2f9e52;border-radius:14px;padding:13px 15px;margin-bottom:14px;font-size:14px;line-height:1.5}
+  .rejoin.on{display:block}
+  .rejoin b{color:#9ce6b6}
   .brBtn{display:block;width:100%;border:1px solid var(--line);background:var(--panel2);color:var(--text);border-radius:14px;padding:17px;font:inherit;font-weight:800;font-size:19px;cursor:pointer;margin-bottom:11px}
   .brBtn:hover{border-color:var(--amber);background:rgba(245,166,35,.12)}
   .status{text-align:center;color:var(--dim);font-size:14px;margin:20px 0}
@@ -60,8 +64,9 @@
 
   <!-- écran : rejoindre -->
   <div id="scrJoin">
-    <h1>Rejoindre la partie</h1>
-    <div class="sub">Choisis ta couleur d'agent et entre ton prénom.</div>
+    <h1 id="joinTitle">Rejoindre la partie</h1>
+    <div class="sub" id="joinSub">Choisis ta couleur d'agent et entre ton prénom.</div>
+    <div class="rejoin" id="rejoinBox"></div>
     <div class="card">
       <div class="colors" id="colorGrid"></div>
       <input class="name" id="nameInput" type="text" maxlength="14" placeholder="Ton prénom">
@@ -110,24 +115,62 @@ const sid='s'+Math.random().toString(36).slice(2,9);
 let sb=null,chan=null,myColor=null,taken={},startedGame=false,joined=false;
 const ABT=['#e0322f','#2b7fd4','#e8912f','#3ca15a','#8a54c6','#d64a9e','#00a6a6'];
 let curQid=null,curCorrect=null,qAppearedAt=0,sel=new Set(),answered=false;
+let rosterSeen=false,memApplied=false;
 
 q('codePill').textContent = CODE ? ('Session '+CODE) : 'Aucune session';
 
 function show(id){['scrJoin','scrWait','scrQ'].forEach(s=>q(s).classList.toggle('hide',s!==id));}
 function light(c){return c==='JAUNE'||c==='BLANC'||c==='CREME'||c==='BLEUCL';}
+/* comparaison de prénoms tolérante (casse + accents) */
+function norm(s){return (s||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+
+/* ---- mémoire locale : permet de reprendre sa couleur après une éjection ---- */
+const MEMKEY='ssiappy:'+CODE;
+function remember(color,name){try{localStorage.setItem(MEMKEY,JSON.stringify({color,name}));}catch(e){}}
+function recall(){try{return JSON.parse(localStorage.getItem(MEMKEY)||'null');}catch(e){return null;}}
 
 /* ---- grille des couleurs ---- */
 function buildColors(){const g=q('colorGrid');g.innerHTML='';
   ORDER.forEach(c=>{const b=document.createElement('button');b.className='cbtn';b.dataset.c=c;
     b.innerHTML='<span class="d" style="background:'+COL[c]+'"></span><span class="nm">'+CNAME[c]+'</span>';
-    b.onclick=()=>{if(b.disabled)return;myColor=c;[...g.children].forEach(x=>x.classList.remove('sel'));b.classList.add('sel');refreshJoinBtn();};
+    b.onclick=()=>{if(b.disabled)return;pickColor(c);};
     g.appendChild(b);});
 }
-function refreshColors(){[...q('colorGrid').children].forEach(b=>{const c=b.dataset.c;const t=taken[c];
-  const mine=myColor===c;b.disabled=!!t&&!mine;
-  b.querySelector('.nm').textContent=t?(CNAME[c]+' · '+t):CNAME[c];});refreshJoinBtn();}
-function refreshJoinBtn(){q('joinBtn').disabled=!myColor||(taken[myColor]&&taken[myColor]!==q('nameInput').value.trim());}
+function pickColor(c){myColor=c;
+  [...q('colorGrid').children].forEach(x=>x.classList.toggle('sel',x.dataset.c===c));
+  /* reprise : le prénom est déjà connu du poste formateur, on le remet tout seul */
+  if(taken[c]&&!norm(q('nameInput').value))q('nameInput').value=taken[c];
+  refreshJoinBtn();}
+function refreshColors(){
+  [...q('colorGrid').children].forEach(b=>{const c=b.dataset.c,t=taken[c],mine=myColor===c;
+    /* partie lancée : on ne peut QUE reprendre une couleur déjà en jeu */
+    b.disabled = startedGame ? !t : (!!t && !mine);
+    b.classList.toggle('back',!!(startedGame&&t));
+    b.querySelector('.nm').textContent=t?(CNAME[c]+' · '+t):CNAME[c];});
+  q('joinTitle').textContent=startedGame?'Reprendre la partie':'Rejoindre la partie';
+  q('joinSub').textContent=startedGame
+    ?'La partie est en cours. Touche la couleur que tu avais pour revenir dans le jeu.'
+    :'Choisis ta couleur d\'agent et entre ton prénom.';
+  q('joinBtn').textContent=startedGame?'Reprendre':'Rejoindre';
+  refreshJoinBtn();}
+function refreshJoinBtn(){const btn=q('joinBtn');
+  if(!myColor){btn.disabled=true;return;}
+  if(startedGame){btn.disabled=!taken[myColor];return;}
+  const nm=norm(q('nameInput').value);
+  btn.disabled=!!taken[myColor]&&norm(taken[myColor])!==nm;}
 q('nameInput').addEventListener('input',refreshJoinBtn);
+
+/* ---- proposition de reprise automatique après une éjection ---- */
+function applyMemory(){if(memApplied||joined)return;const m=recall();
+  if(!m||!m.color||!taken[m.color])return;
+  if(norm(taken[m.color])!==norm(m.name))return; /* la couleur a changé de mains */
+  memApplied=true;
+  pickColor(m.color);
+  q('nameInput').value=taken[m.color];
+  const box=q('rejoinBox');
+  box.innerHTML='Tu étais <b>Agent '+taken[m.color]+'</b> ('+CNAME[m.color]+').<br>Touche « Reprendre » pour revenir dans la partie, ton score est conservé.';
+  box.classList.add('on');
+  refreshJoinBtn();}
 
 /* ---- connexion realtime ---- */
 function connect(){
@@ -135,33 +178,37 @@ function connect(){
   if(typeof supabase==='undefined'){q('joinStatus').textContent='Connexion indisponible (SDK non chargé).';return;}
   sb=supabase.createClient(SUPA_URL,SUPA_KEY);
   chan=sb.channel('sim-qcm-'+CODE,{config:{broadcast:{self:false}}});
-  chan.on('broadcast',{event:'roster'},({payload})=>{taken=payload.taken||{};startedGame=!!payload.started;refreshColors();});
+  chan.on('broadcast',{event:'roster'},({payload})=>{taken=payload.taken||{};startedGame=!!payload.started;rosterSeen=true;refreshColors();applyMemory();});
   chan.on('broadcast',{event:'state'},({payload})=>{onState(payload);});
   chan.on('broadcast',{event:'question'},({payload})=>{onQuestion(payload);});
   chan.on('broadcast',{event:'reveal'},({payload})=>{onReveal(payload);});
   chan.on('broadcast',{event:'branch'},({payload})=>{onBranch(payload);});
   chan.on('broadcast',{event:'branchclear'},()=>{hideBranch();});
-  chan.subscribe(st=>{if(st==='SUBSCRIBED'){bcast('hello',{sid});}});
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&joined&&chan){try{bcast('hello',{sid});}catch(e){}}});
-  window.addEventListener('online',()=>{if(joined&&chan){try{bcast('hello',{sid});}catch(e){}}});
+  chan.subscribe(st=>{if(st==='SUBSCRIBED'){bcast('hello',{sid});
+    if(!joined)q('joinStatus').textContent='Connecté au poste formateur.';}});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden&&chan){try{bcast('hello',{sid});if(joined&&myColor)bcast('claim',{sid,color:myColor,name:(q('nameInput').value||'').trim()});}catch(e){}}});
+  window.addEventListener('online',()=>{if(chan){try{bcast('hello',{sid});if(joined&&myColor)bcast('claim',{sid,color:myColor,name:(q('nameInput').value||'').trim()});}catch(e){}}});
 }
 function bcast(event,payload){if(chan)chan.send({type:'broadcast',event,payload});}
 
 /* ---- rejoindre ---- */
 q('turnBtn').onclick=()=>{bcast('continue',{sid,color:myColor});q('turnBtn').classList.add('hide');q('rollBtn').classList.remove('hide');q('rollBtn').disabled=false;q('rollBtn').textContent='\uD83C\uDFB2 Lancer le dé';q('waitStatus').textContent='\u00C0 toi de lancer le dé !';};
 q('rollBtn').onclick=()=>{bcast('roll',{sid,color:myColor});q('rollBtn').disabled=true;q('rollBtn').textContent='Lancé…';q('waitStatus').textContent='En attente de la question…';};
-q('joinBtn').onclick=()=>{const name=(q('nameInput').value||'').trim()||CNAME[myColor];
+q('joinBtn').onclick=()=>{const name=(q('nameInput').value||'').trim()||taken[myColor]||CNAME[myColor];
+  const reprise=startedGame;
   joined=true;
+  remember(myColor,name);
   bcast('claim',{sid,color:myColor,name});
-  q('turnText').textContent='Bienvenue '+name+' !';
-  show('scrWait');q('waitStatus').textContent='En attente du démarrage de la partie…';
+  q('turnText').textContent=reprise?('Content de te revoir, '+name+' !'):('Bienvenue '+name+' !');
+  show('scrWait');
+  q('waitStatus').textContent=reprise?'Reprise en cours… le poste formateur te remet dans la partie.':'En attente du démarrage de la partie…';
 };
 
 /* ---- état de jeu ---- */
 function setBanner(color,txt){const dots=[q('turnDot'),q('turnDot2')],txts=[q('turnText'),q('turnText2')];
   dots.forEach(d=>d.style.background=color?COL[color]:'#555');txts.forEach(t=>t.textContent=txt);}
 function onState(p){startedGame=!!p.started;
-  if(!joined)return;
+  if(!joined){if(rosterSeen)refreshColors();return;}
   if(p.ended){setBanner(p.winnerColor,'🏆 '+(p.winnerName||'')+' a gagné !');q('rollBtn').classList.add('hide');show('scrWait');q('waitStatus').textContent='Partie terminée.';return;}
   const mine=p.activeColor===myColor;
   setBanner(p.activeColor,(mine?'À toi de jouer !':'Au tour de '+(p.activeName||CNAME[p.activeColor]||'')));
@@ -182,7 +229,7 @@ function onQuestion(p){if(!joined||!p||p.qid===curQid)return;hideBranch();q('tur
     d.style.background=ABT[i%ABT.length];d.textContent=String.fromCharCode(65+i);
     d.onclick=()=>{if(answered)return;if(sel.has(i)){sel.delete(i);d.classList.remove('sel');}else{sel.add(i);d.classList.add('sel');}};
     wrap.appendChild(d);});
-  q('sendBtn').disabled=false;q('sendBtn').textContent='Valider ma réponse';q('qStatus').textContent='';
+  q('sendBtn').classList.remove('hide');q('sendBtn').disabled=false;q('sendBtn').textContent='Valider ma réponse';q('qStatus').textContent='';
   show('scrQ');
 }
 q('sendBtn').onclick=()=>{if(answered||!curQid)return;answered=true;
